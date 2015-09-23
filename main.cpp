@@ -104,9 +104,9 @@ struct Mirror
     const glm::vec3 color;
 };
 
-glm::vec3 indirect(const Ray &r, const Diffuse &diffuse);
-glm::vec3 indirect(const Ray &r, const Glass &glass);
-glm::vec3 indirect(const Ray &r, const Mirror &mirror);
+glm::vec3 indirect(const Ray &r, int countdown, const Diffuse &diffuse);
+glm::vec3 indirect(const Ray &r, int countdown, const Glass &glass);
+glm::vec3 indirect(const Ray &r, int countdown, const Mirror &mirror);
 
 double bsdf(const double a, const Diffuse &diffuse) {
     return a/pi;
@@ -132,7 +132,7 @@ struct Object
     virtual glm::vec3 albedo() const = 0;
     virtual glm::vec3 getNormale(const glm::vec3 &point) const = 0;
     virtual float bsdf(const double a) const = 0;
-    virtual glm::vec3 indirect(const Ray &r) const = 0;
+    virtual glm::vec3 indirect(const Ray &r, int countdown) const = 0;
 };
 
 template<typename P, typename M>
@@ -162,9 +162,9 @@ struct ObjectTpl final : Object
         return ::bsdf(a, material);
     }
 
-    glm::vec3 indirect(const Ray &r) const
+    glm::vec3 indirect(const Ray &r, int countdown) const
     {
-        return albedo()*::indirect(r, material);
+        return albedo()*::indirect(r, countdown, material);
     }
 
     const P &primitive;
@@ -361,7 +361,11 @@ glm::vec3 sample_sphere(const float r, const float u, const float v, float &pdf,
     return sample_p * r;
 }
 
-glm::vec3 radiance (const Ray & r) // energie diffuse = cos theta / pi
+double squaredDistance(const glm::vec3 &v) {
+    return v.x*v.x+v.y*v.y+v.z*v.z;
+}
+
+glm::vec3 radiance (const Ray & r, int countdown = 3) // energie diffuse = cos theta / pi
 {
     float t;
     Object* o = intersect(r, t);
@@ -380,27 +384,30 @@ glm::vec3 radiance (const Ray & r) // energie diffuse = cos theta / pi
     glm::vec3 pEx = p + ex*0.1f;
     Ray rayEx{pEx, ex};
     float light = 1.0f;
-    if(t*t < lightP.x*lightP.x+lightP.y*lightP.y+lightP.z*lightP.z)
+    if(t*t < squaredDistance(lightP))
         light = 0;
 
     double angle = glm::dot(normale,dir);
 
     //return o->albedo()*energie;
 
-    return o->albedo()*o->bsdf(std::abs(angle))*light + o->indirect(rayEx);//*/
+    if(countdown > 0)
+        return o->albedo()*o->bsdf(std::abs(angle))*light + o->indirect(rayEx, --countdown);
+    else
+        return o->albedo()*o->bsdf(std::abs(angle))*light;
 }
 
 
-glm::vec3 indirect(const Ray &r, const Diffuse &diffuse) {
+glm::vec3 indirect(const Ray &r, int countdown, const Diffuse &diffuse) {
     return glm::vec3{0,0,0};
 }
 
-glm::vec3 indirect(const Ray &r, const Glass &glass) {
+glm::vec3 indirect(const Ray &r, int countdown, const Glass &glass) {
     return glm::vec3{0,0,0};
 }
 
-glm::vec3 indirect(const Ray &r, const Mirror &mirror) {
-    return radiance(r);
+glm::vec3 indirect(const Ray &r, int countdown, const Mirror &mirror) {
+    return radiance(r, countdown);
 }
 
 int main (int, char **)
