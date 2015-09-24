@@ -113,7 +113,7 @@ double bsdf(const double a, const Diffuse &diffuse) {
 }
 
 double bsdf(const double a, const Glass &glass) {
-    return a/pi;
+    return 0;
 }
 
 double bsdf(const double a, const Mirror &mirror) {
@@ -184,29 +184,30 @@ namespace scene
     // Primitives
 
     // Left Wall
-    const Triangle leftWallA{{0, 0, 0}, {0, 100, 0}, {0, 0, 150}};
+    const Triangle leftWallA{{0, 0, 0}, {0, 0, 150}, {0, 100, 0}};
     const Triangle leftWallB{{0, 100, 150}, {0, 100, 0}, {0, 0, 150}};
 
     // Right Wall
     const Triangle rightWallA{{100, 0, 0}, {100, 100, 0}, {100, 0, 150}};
-    const Triangle rightWallB{{100, 100, 150}, {100, 100, 0}, {100, 0, 150}};
+    const Triangle rightWallB{{100, 100, 150}, {100, 0, 150}, {100, 100, 0}};
 
     // Back wall
     const Triangle backWallA{{0, 0, 0}, {100, 0, 0}, {100, 100, 0}};
-    const Triangle backWallB{{0, 0, 0}, {0, 100, 0}, {100, 100, 0}};
+    const Triangle backWallB{{0, 0, 0}, {100, 100, 0}, {0, 100, 0}};
 
     // Bottom Floor
     const Triangle bottomWallA{{0, 0, 0}, {100, 0, 0}, {100, 0, 150}};
-    const Triangle bottomWallB{{0, 0, 0}, {0, 0, 150}, {100, 0, 150}};
+    const Triangle bottomWallB{{0, 0, 0}, {100, 0, 150}, {0, 0, 150}};
 
     // Top Ceiling
     const Triangle topWallA{{0, 100, 0}, {100, 100, 0}, {0, 100, 150}};
-    const Triangle topWallB{{100, 100, 150}, {100, 100, 0}, {0, 100, 150}};
+    const Triangle topWallB{{100, 100, 150}, {0, 100, 150}, {100, 100, 0}};
 
     const Sphere leftSphere{16.5, glm::vec3 {27, 16.5, 47}};
     const Sphere rightSphere{16.5, glm::vec3 {73, 16.5, 78}};
 
     const glm::vec3 light{50, 70, 81.6};
+    const glm::vec3 lightColor(10,10,10);
 
     // Materials
     const Diffuse white{{.75, .75, .75}};
@@ -350,6 +351,12 @@ bool refract(glm::vec3 i, glm::vec3 n, float ior, glm::vec3 &wo)
     return true;
 }
 
+/* Retourne un vecteur de déplacement
+ * r rayon de la sphere
+ * u, v randoms
+ * pdf valeur out
+ * normal normale (direction lumière/point normalisée)
+*/
 glm::vec3 sample_sphere(const float r, const float u, const float v, float &pdf, const glm::vec3 normal)
 {
     pdf = 1.f / (pi * r * r);
@@ -361,29 +368,50 @@ glm::vec3 sample_sphere(const float r, const float u, const float v, float &pdf,
     return sample_p * r;
 }
 
-double squaredDistance(const glm::vec3 &v) {
+// dirLux normalisé
+glm::vec3 random_light(const glm::vec3 dirLux, float &pdf) {
+    float u = random_u();
+    float v = random_u();
+    return sample_sphere(10.f, u, v, pdf, -dirLux);
+}
+
+float squaredDistance(const glm::vec3 &v) {
     return v.x*v.x+v.y*v.y+v.z*v.z;
 }
 
-glm::vec3 radiance (const Ray & r, int countdown = 3) // energie diffuse = cos theta / pi
+glm::vec3 radiance (const Ray & r, int countdown = 3)
 {
     float t;
     Object* o = intersect(r, t);
     if(t == noIntersect)
         return glm::vec3{0,0,0};
 
+    // Le point et sa normale
     glm::vec3 p = r.origin+t*r.direction;
     glm::vec3 normale = o->getNormale(p);
-    glm::vec3 lightP = scene::light-p;
+
+    // Choix d'un point aléatoire sur une sphère de lumière
+    glm::vec3 lightPToSphere = scene::light-p;
+    glm::vec3 dirToSphere = glm::normalize(lightPToSphere);
+    float pdf;
+    glm::vec3 lightOnSphere = random_light(dirToSphere, pdf);
+
+
+    //std::cout << scene::light.x << "," << scene::light.y << "," << scene::light.z << " / " << lightOnSphere.x << "," << lightOnSphere.y << "," << lightOnSphere.z << std::endl;
+    // Intersection entre le point et la lumière
+    glm::vec3 lightP = (scene::light+lightOnSphere)-p;
     glm::vec3 dir = glm::normalize(lightP);
     glm::vec3 p2 = p+dir*0.1f;
     Ray ray{p2,dir};
     intersect(ray, t);
 
+    // Rayon réfracté par la surface
     glm::vec3 ex = reflect(-r.direction, normale);
     glm::vec3 pEx = p + ex*0.1f;
     Ray rayEx{pEx, ex};
     float light = 1.0f;
+
+    // Si intersection avant lumière alors pas d'éclairage direct
     if(t*t < squaredDistance(lightP))
         light = 0;
 
@@ -392,19 +420,23 @@ glm::vec3 radiance (const Ray & r, int countdown = 3) // energie diffuse = cos t
     //return o->albedo()*energie;
 
     if(countdown > 0)
-        return o->albedo()*o->bsdf(std::abs(angle))*light + o->indirect(r, rayEx, normale, --countdown);
+        return o->albedo()*o->bsdf(std::abs(angle))*light*scene::lightColor/squaredDistance(lightP)/pdf + o->indirect(r, rayEx, normale, --countdown);
     else
-        return o->albedo()*o->bsdf(std::abs(angle))*light;
+        return o->albedo()*o->bsdf(std::abs(angle))*light*scene::lightColor/squaredDistance(lightP)/pdf;
 }
 
 
 glm::vec3 indirect(const Ray &rOrigine, const Ray &rReflect, const glm::vec3 & n, int countdown, const Diffuse &diffuse) {
-    return glm::vec3{0,0,0};
+    float pdf;
+    glm::vec3 w = glm::normalize(sample_sphere(1, random_u(), random_u(), pdf, n));
+    Ray rIndirect{rReflect.origin-0.1f*rReflect.direction+0.1f*w, w};
+    return radiance(rIndirect, countdown);
+    //return glm::vec3(0,0,0);
 }
 
 glm::vec3 indirect(const Ray &rOrigine, const Ray &rReflect, const glm::vec3 & n, int countdown, const Glass &glass) {
 
-    float fresnel = fresnelR(rOrigine.direction,n, 1.5);
+    float fresnel = fresnelR(-rOrigine.direction,n, 1.5);
     glm::vec3 refracted;
     bool canRefract = refract(-rOrigine.direction, n, 1.5, refracted);
     Ray rRefracted{rReflect.origin-rReflect.direction*0.1f+refracted*0.1f, refracted};
@@ -436,21 +468,33 @@ int main (int, char **)
 
     glm::mat4 screenToRay = glm::inverse(camera);
 
+    #pragma omp parallel for
     for (int y = 0; y < h; y++)
     {
         std::cerr << "\rRendering: " << 100 * y / (h - 1) << "%";
 
         for (unsigned short x = 0; x < w; x++)
         {
-            glm::vec4 p0 = screenToRay * glm::vec4{float(x), float(h - y), 0.f, 1.f};
-            glm::vec4 p1 = screenToRay * glm::vec4{float(x), float(h - y), 1.f, 1.f};
+            glm::vec3 r;
+            float smoothies = 120.f;
+            for(int smooths = 0; smooths < smoothies; ++smooths)
+            {
+                float u = random_u();
+                float v = random_u();
+                float R = sqrt(-2*log(u));
+                float xDecal = R * cos(2*pi*u);
+                float yDecal = R * sin(2*pi*v);
+                glm::vec4 p0 = screenToRay * glm::vec4{float(x)+xDecal, float(h - y )+ yDecal, 0.f, 1.f};
+                glm::vec4 p1 = screenToRay * glm::vec4{float(x)+xDecal, float(h - y )+ yDecal, 1.f, 1.f};
 
-            glm::vec3 pp0 = glm::vec3(p0 / p0.w);
-            glm::vec3 pp1 = glm::vec3(p1 / p1.w);
+                glm::vec3 pp0 = glm::vec3(p0 / p0.w);
+                glm::vec3 pp1 = glm::vec3(p1 / p1.w);
 
-            glm::vec3 d = glm::normalize(pp1 - pp0);
+                glm::vec3 d = glm::normalize(pp1 - pp0);
 
-            glm::vec3 r = radiance (Ray{pp0, d});
+                r += radiance (Ray{pp0, d})/smoothies;
+
+            }
             colors[y * w + x] += glm::clamp(r, glm::vec3(0.f, 0.f, 0.f), glm::vec3(1.f, 1.f, 1.f)) * 0.25f;
         }
     }
