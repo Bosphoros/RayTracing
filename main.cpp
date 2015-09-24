@@ -104,9 +104,9 @@ struct Mirror
     const glm::vec3 color;
 };
 
-glm::vec3 indirect(const Ray &r, int countdown, const Diffuse &diffuse);
-glm::vec3 indirect(const Ray &r, int countdown, const Glass &glass);
-glm::vec3 indirect(const Ray &r, int countdown, const Mirror &mirror);
+glm::vec3 indirect(const Ray &rOrigine, const Ray &rReflect, const glm::vec3 & n, int countdown, const Diffuse &diffuse);
+glm::vec3 indirect(const Ray &rOrigine, const Ray &rReflect, const glm::vec3 & n, int countdown, const Glass &glass);
+glm::vec3 indirect(const Ray &rOrigine, const Ray &rReflect, const glm::vec3 & n, int countdown, const Mirror &mirror);
 
 double bsdf(const double a, const Diffuse &diffuse) {
     return a/pi;
@@ -132,7 +132,7 @@ struct Object
     virtual glm::vec3 albedo() const = 0;
     virtual glm::vec3 getNormale(const glm::vec3 &point) const = 0;
     virtual float bsdf(const double a) const = 0;
-    virtual glm::vec3 indirect(const Ray &r, int countdown) const = 0;
+    virtual glm::vec3 indirect(const Ray &rOrigine, const Ray &rReflect, const glm::vec3 & n, int countdown) const = 0;
 };
 
 template<typename P, typename M>
@@ -162,9 +162,9 @@ struct ObjectTpl final : Object
         return ::bsdf(a, material);
     }
 
-    glm::vec3 indirect(const Ray &r, int countdown) const
+    glm::vec3 indirect(const Ray &rOrigine, const Ray &rReflect, const glm::vec3 & n, int countdown) const
     {
-        return albedo()*::indirect(r, countdown, material);
+        return albedo()*::indirect(rOrigine, rReflect, n, countdown, material);
     }
 
     const P &primitive;
@@ -213,8 +213,8 @@ namespace scene
     const Diffuse red{{.75, .25, .25}};
     const Diffuse blue{{.25, .25, .75}};
 
-    const Glass glass{{.9, .1, .9}};
-    const Mirror mirror{{.9, .9, .1}};
+    const Glass glass{{1, 1, 1}};
+    const Mirror mirror{{1, 1, 1}};
 
     // Objects
     // Note: this is a rather convoluted way of initialising a vector of unique_ptr ;)
@@ -392,22 +392,30 @@ glm::vec3 radiance (const Ray & r, int countdown = 3) // energie diffuse = cos t
     //return o->albedo()*energie;
 
     if(countdown > 0)
-        return o->albedo()*o->bsdf(std::abs(angle))*light + o->indirect(rayEx, --countdown);
+        return o->albedo()*o->bsdf(std::abs(angle))*light + o->indirect(r, rayEx, normale, --countdown);
     else
         return o->albedo()*o->bsdf(std::abs(angle))*light;
 }
 
 
-glm::vec3 indirect(const Ray &r, int countdown, const Diffuse &diffuse) {
+glm::vec3 indirect(const Ray &rOrigine, const Ray &rReflect, const glm::vec3 & n, int countdown, const Diffuse &diffuse) {
     return glm::vec3{0,0,0};
 }
 
-glm::vec3 indirect(const Ray &r, int countdown, const Glass &glass) {
-    return glm::vec3{0,0,0};
+glm::vec3 indirect(const Ray &rOrigine, const Ray &rReflect, const glm::vec3 & n, int countdown, const Glass &glass) {
+
+    float fresnel = fresnelR(rOrigine.direction,n, 1.5);
+    glm::vec3 refracted;
+    bool canRefract = refract(-rOrigine.direction, n, 1.5, refracted);
+    Ray rRefracted{rReflect.origin-rReflect.direction*0.1f+refracted*0.1f, refracted};
+    if(canRefract)
+        return fresnel*radiance(rReflect, countdown)+(1-fresnel)*radiance(rRefracted, countdown);
+    else
+        return fresnel*radiance(rReflect, countdown);
 }
 
-glm::vec3 indirect(const Ray &r, int countdown, const Mirror &mirror) {
-    return radiance(r, countdown);
+glm::vec3 indirect(const Ray &rOrigine, const Ray &rReflect, const glm::vec3 & n, int countdown, const Mirror &mirror) {
+    return radiance(rReflect, countdown);
 }
 
 int main (int, char **)
