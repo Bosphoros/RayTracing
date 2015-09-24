@@ -379,7 +379,7 @@ float squaredDistance(const glm::vec3 &v) {
     return v.x*v.x+v.y*v.y+v.z*v.z;
 }
 
-glm::vec3 radiance (const Ray & r, int countdown = 3)
+glm::vec3 radiance (const Ray & r, int countdown = 6)
 {
     float t;
     Object* o = intersect(r, t);
@@ -440,8 +440,14 @@ glm::vec3 indirect(const Ray &rOrigine, const Ray &rReflect, const glm::vec3 & n
     glm::vec3 refracted;
     bool canRefract = refract(-rOrigine.direction, n, 1.5, refracted);
     Ray rRefracted{rReflect.origin-rReflect.direction*0.1f+refracted*0.1f, refracted};
-    if(canRefract)
-        return fresnel*radiance(rReflect, countdown)+(1-fresnel)*radiance(rRefracted, countdown);
+    if(canRefract) {
+        float u = random_u();
+        if(u < fresnel)
+            return radiance(rReflect, countdown);
+        else
+            return radiance(rRefracted, countdown);
+    }
+        //return fresnel*radiance(rReflect, countdown)+(1-fresnel)*radiance(rRefracted, countdown);
     else
         return fresnel*radiance(rReflect, countdown);
 }
@@ -492,9 +498,10 @@ int main (int, char **)
 
                 glm::vec3 d = glm::normalize(pp1 - pp0);
 
-                r += radiance (Ray{pp0, d})/smoothies;
+                r += radiance (Ray{pp0, d});
 
             }
+            r/=smoothies;
             colors[y * w + x] += glm::clamp(r, glm::vec3(0.f, 0.f, 0.f), glm::vec3(1.f, 1.f, 1.f)) * 0.25f;
         }
     }
