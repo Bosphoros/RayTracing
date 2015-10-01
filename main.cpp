@@ -104,9 +104,9 @@ struct Mirror
     const glm::vec3 color;
 };
 
-glm::vec3 indirect(const Ray &rOrigine, const Ray &rReflect, const glm::vec3 & n, int countdown, const Diffuse &diffuse);
-glm::vec3 indirect(const Ray &rOrigine, const Ray &rReflect, const glm::vec3 & n, int countdown, const Glass &glass);
-glm::vec3 indirect(const Ray &rOrigine, const Ray &rReflect, const glm::vec3 & n, int countdown, const Mirror &mirror);
+glm::vec3 indirect(const Ray &rOrigine, const Ray &rReflect, const glm::vec3 &p,  const glm::vec3 & n, int countdown, const Diffuse &diffuse);
+glm::vec3 indirect(const Ray &rOrigine, const Ray &rReflect, const glm::vec3 &p,  const glm::vec3 & n, int countdown, const Glass &glass);
+glm::vec3 indirect(const Ray &rOrigine, const Ray &rReflect, const glm::vec3 &p,  const glm::vec3 & n, int countdown, const Mirror &mirror);
 
 double bsdf(const double a, const Diffuse &diffuse) {
     return a/pi;
@@ -132,7 +132,7 @@ struct Object
     virtual glm::vec3 albedo() const = 0;
     virtual glm::vec3 getNormale(const glm::vec3 &point) const = 0;
     virtual float bsdf(const double a) const = 0;
-    virtual glm::vec3 indirect(const Ray &rOrigine, const Ray &rReflect, const glm::vec3 & n, int countdown) const = 0;
+    virtual glm::vec3 indirect(const Ray &rOrigine, const Ray &rReflect, const glm::vec3 &p,  const glm::vec3 & n, int countdown) const = 0;
 };
 
 template<typename P, typename M>
@@ -162,9 +162,9 @@ struct ObjectTpl final : Object
         return ::bsdf(a, material);
     }
 
-    glm::vec3 indirect(const Ray &rOrigine, const Ray &rReflect, const glm::vec3 & n, int countdown) const
+    glm::vec3 indirect(const Ray &rOrigine, const Ray &rReflect, const glm::vec3 &p,  const glm::vec3 & n, int countdown) const
     {
-        return albedo()*::indirect(rOrigine, rReflect, n, countdown, material);
+        return albedo()*::indirect(rOrigine, rReflect, p, n, countdown, material);
     }
 
     const P &primitive;
@@ -184,20 +184,20 @@ namespace scene
     // Primitives
 
     // Left Wall
-    const Triangle leftWallA{{0, 0, 0}, {0, 0, 150}, {0, 100, 0}};
-    const Triangle leftWallB{{0, 100, 150}, {0, 100, 0}, {0, 0, 150}};
+    const Triangle leftWallA{{0, 0, 0}, {0, 100, 0}, {0, 0, 150}};
+    const Triangle leftWallB{{0, 100, 150}, {0, 0, 150}, {0, 100, 0}};
 
     // Right Wall
-    const Triangle rightWallA{{100, 0, 0}, {100, 100, 0}, {100, 0, 150}};
-    const Triangle rightWallB{{100, 100, 150}, {100, 0, 150}, {100, 100, 0}};
+    const Triangle rightWallA{{100, 0, 0}, {100, 0, 150}, {100, 100, 0}};
+    const Triangle rightWallB{{100, 100, 150}, {100, 100, 0}, {100, 0, 150}};
 
     // Back wall
     const Triangle backWallA{{0, 0, 0}, {100, 0, 0}, {100, 100, 0}};
     const Triangle backWallB{{0, 0, 0}, {100, 100, 0}, {0, 100, 0}};
 
     // Bottom Floor
-    const Triangle bottomWallA{{0, 0, 0}, {100, 0, 0}, {100, 0, 150}};
-    const Triangle bottomWallB{{0, 0, 0}, {100, 0, 150}, {0, 0, 150}};
+    const Triangle bottomWallA{{0, 0, 0}, {100, 0, 150}, {100, 0, 0}};
+    const Triangle bottomWallB{{0, 0, 0}, {0, 0, 150}, {100, 0, 150}};
 
     // Top Ceiling
     const Triangle topWallA{{0, 100, 0}, {100, 100, 0}, {0, 100, 150}};
@@ -207,7 +207,7 @@ namespace scene
     const Sphere rightSphere{16.5, glm::vec3 {73, 16.5, 78}};
 
     const glm::vec3 light{50, 70, 81.6};
-    const glm::vec3 lightColor(10,10,10);
+    const glm::vec3 lightColor(1,1,1);
 
     // Materials
     const Diffuse white{{.75, .75, .75}};
@@ -420,21 +420,21 @@ glm::vec3 radiance (const Ray & r, int countdown = 6)
     //return o->albedo()*energie;
 
     if(countdown > 0)
-        return o->albedo()*o->bsdf(std::abs(angle))*light*scene::lightColor/squaredDistance(lightP)/pdf + o->indirect(r, rayEx, normale, --countdown);
+        return o->albedo()*o->bsdf(std::abs(angle))*light*scene::lightColor/squaredDistance(lightP)/pdf + o->albedo()*o->indirect(r, rayEx, p, normale, --countdown);
     else
         return o->albedo()*o->bsdf(std::abs(angle))*light*scene::lightColor/squaredDistance(lightP)/pdf;
 }
 
 
-glm::vec3 indirect(const Ray &rOrigine, const Ray &rReflect, const glm::vec3 & n, int countdown, const Diffuse &diffuse) {
+glm::vec3 indirect(const Ray &rOrigine, const Ray &rReflect, const glm::vec3 &p, const glm::vec3 & n, int countdown, const Diffuse &diffuse) {
     float pdf;
     glm::vec3 w = glm::normalize(sample_sphere(1, random_u(), random_u(), pdf, n));
-    Ray rIndirect{rReflect.origin-0.1f*rReflect.direction+0.1f*w, w};
+    Ray rIndirect{p+0.1f*w, w};
     return radiance(rIndirect, countdown);
     //return glm::vec3(0,0,0);
 }
 
-glm::vec3 indirect(const Ray &rOrigine, const Ray &rReflect, const glm::vec3 & n, int countdown, const Glass &glass) {
+glm::vec3 indirect(const Ray &rOrigine, const Ray &rReflect, const glm::vec3 &p,  const glm::vec3 & n, int countdown, const Glass &glass) {
 
     float fresnel = fresnelR(-rOrigine.direction,n, 1.5);
     glm::vec3 refracted;
@@ -452,8 +452,23 @@ glm::vec3 indirect(const Ray &rOrigine, const Ray &rReflect, const glm::vec3 & n
         return fresnel*radiance(rReflect, countdown);
 }
 
-glm::vec3 indirect(const Ray &rOrigine, const Ray &rReflect, const glm::vec3 & n, int countdown, const Mirror &mirror) {
+glm::vec3 indirect(const Ray &rOrigine, const Ray &rReflect, const glm::vec3 &p,  const glm::vec3 & n, int countdown, const Mirror &mirror) {
     return radiance(rReflect, countdown);
+}
+
+void exoSamplingMonteCarlo() {
+    float xuni = 0;
+    float xboxmuller = 0;
+    int it = 100;
+    float ecartType = 0.7;
+    for(int i = 0; i < it; ++i){
+
+        xuni += cos(pi*random_u()-(pi/2))*pi;
+        float val = sqrt(-2*log(random_u()))*cos(2*pi*random_u())*ecartType;
+        if(val >= -pi/2 && val <= pi/2)
+            xboxmuller += (cos(val))/((1/(ecartType*sqrt(2*pi)))*exp(-(val*val)/(2*ecartType*ecartType)));
+    }
+    std::cout << (xuni/it) << ", " << (xboxmuller/it) << std::endl;
 }
 
 int main (int, char **)
@@ -482,7 +497,7 @@ int main (int, char **)
         for (unsigned short x = 0; x < w; x++)
         {
             glm::vec3 r;
-            float smoothies = 120.f;
+            float smoothies = 150.f;
             for(int smooths = 0; smooths < smoothies; ++smooths)
             {
                 float u = random_u();
@@ -502,7 +517,7 @@ int main (int, char **)
 
             }
             r/=smoothies;
-            colors[y * w + x] += glm::clamp(r, glm::vec3(0.f, 0.f, 0.f), glm::vec3(1.f, 1.f, 1.f)) * 0.25f;
+            colors[y * w + x] = colors[y * w + x]*0.25f + glm::clamp(r, glm::vec3(0.f, 0.f, 0.f), glm::vec3(1.f, 1.f, 1.f));// * 0.25f;
         }
     }
 
