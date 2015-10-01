@@ -164,7 +164,7 @@ struct ObjectTpl final : Object
 
     glm::vec3 indirect(const Ray &rOrigine, const Ray &rReflect, const glm::vec3 &p,  const glm::vec3 & n, int countdown) const
     {
-        return albedo()*::indirect(rOrigine, rReflect, p, n, countdown, material);
+        return ::indirect(rOrigine, rReflect, p, n, countdown, material);
     }
 
     const P &primitive;
@@ -207,7 +207,7 @@ namespace scene
     const Sphere rightSphere{16.5, glm::vec3 {73, 16.5, 78}};
 
     const glm::vec3 light{50, 70, 81.6};
-    const glm::vec3 lightColor(1,1,1);
+    const glm::vec3 lightColor(10,10,10);
 
     // Materials
     const Diffuse white{{.75, .75, .75}};
@@ -439,7 +439,7 @@ glm::vec3 indirect(const Ray &rOrigine, const Ray &rReflect, const glm::vec3 &p,
     float fresnel = fresnelR(-rOrigine.direction,n, 1.5);
     glm::vec3 refracted;
     bool canRefract = refract(-rOrigine.direction, n, 1.5, refracted);
-    Ray rRefracted{rReflect.origin-rReflect.direction*0.1f+refracted*0.1f, refracted};
+    Ray rRefracted{p+refracted*0.1f, refracted};
     if(canRefract) {
         float u = random_u();
         if(u < fresnel)
@@ -503,10 +503,10 @@ int main (int, char **)
                 float u = random_u();
                 float v = random_u();
                 float R = sqrt(-2*log(u));
-                float xDecal = R * cos(2*pi*u);
-                float yDecal = R * sin(2*pi*v);
-                glm::vec4 p0 = screenToRay * glm::vec4{float(x)+xDecal, float(h - y )+ yDecal, 0.f, 1.f};
-                glm::vec4 p1 = screenToRay * glm::vec4{float(x)+xDecal, float(h - y )+ yDecal, 1.f, 1.f};
+                float xDecal = R * cos(2*pi*u)*0.7;
+                float yDecal = R * sin(2*pi*v)*0.7;
+                glm::vec4 p0 = screenToRay * glm::vec4{float(x)+xDecal-0.7, float(h - y )+ yDecal-0.7, 0.f, 1.f};
+                glm::vec4 p1 = screenToRay * glm::vec4{float(x)+xDecal-0.7, float(h - y )+ yDecal-0.7, 1.f, 1.f};
 
                 glm::vec3 pp0 = glm::vec3(p0 / p0.w);
                 glm::vec3 pp1 = glm::vec3(p1 / p1.w);
