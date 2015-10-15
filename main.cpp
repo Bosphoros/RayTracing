@@ -7,6 +7,7 @@
 #include <memory>
 #include <fstream>
 #include <iostream>
+#include <QTime>
 
 // GLM (vector / matrix)
 #define GLM_FORCE_RADIANS
@@ -18,6 +19,8 @@
 
 const float pi = 3.1415927f;
 const float noIntersect = std::numeric_limits<float>::infinity();
+
+float squaredDistance(const glm::vec3 &v);
 
 bool isIntersect(float t)
 {
@@ -39,6 +42,68 @@ struct Triangle
 {
     const glm::vec3 v0, v1, v2;
 };
+
+struct Mesh {
+    std::vector<glm::vec3> vertices;
+    std::vector<glm::vec3> normals;
+    std::vector<int> faces;
+    std::vector<int> normalIds;
+    Sphere bounding;
+};
+
+Mesh readObj(const glm::vec3 &center, const char* obj) {
+    std::vector<glm::vec3> vertices;
+    std::vector<glm::vec3> normals;
+    std::vector<int> faces;
+    std::vector<int> normalIds;
+
+        glm::vec3 minVal(1E100, 1E100, 1E100), maxVal(-1E100, -1E100, -1E100);
+        FILE* f = fopen(obj, "r");
+        while (!feof(f)) {
+            char line[255];
+            fgets(line, 255, f);
+            if (line[0]=='v' && line[1]==' ') {
+                glm::vec3 vec;
+                sscanf(line, "v %f %f %f\n", &(vec.x), &(vec.z), &(vec.y));
+                vec.z = -vec.z;
+                glm::vec3 p = vec*50.f + center;
+                vertices.push_back(p);
+                maxVal[0] = std::max(maxVal[0], p.x);
+                maxVal[1] = std::max(maxVal[1], p.y);
+                maxVal[2] = std::max(maxVal[2], p.z);
+                minVal[0] = std::min(minVal[0], p.x);
+                minVal[1] = std::min(minVal[1], p.y);
+                minVal[2] = std::min(minVal[2], p.z);
+            }
+            if (line[0]=='v' && line[1]=='n') {
+                glm::vec3 vec;
+                sscanf(line, "vn %f %f %f\n", &(vec.x), &(vec.z), &(vec.y));
+                vec.z = -vec.z;
+                normals.push_back(vec);
+            }
+            if (line[0]=='f') {
+                int i0, i1, i2;
+                int j0,j1,j2;
+                int k0,k1,k2;
+                sscanf(line, "f %u/%u/%u %u/%u/%u %u/%u/%u\n", &i0, &j0, &k0, &i1, &j1, &k1, &i2, &j2, &k2 );
+                faces.push_back(i0-1);
+                faces.push_back(i1-1);
+                faces.push_back(i2-1);
+                normalIds.push_back(k0-1);
+                normalIds.push_back(k1-1);
+                normalIds.push_back(k2-1);
+            }
+
+        }
+
+        Sphere bounding{sqrt(squaredDistance(maxVal-minVal))*0.5f ,0.5f*(minVal+maxVal)};
+
+        fclose(f);
+
+        Mesh m{vertices, normals, faces, normalIds, bounding};
+
+        return m;
+}
 
     // WARRING: works only if r.d is normalized
 float intersect (const Ray & ray, const Sphere &sphere)
@@ -81,12 +146,36 @@ float intersect(const Ray & ray, const Triangle &triangle)
     return t;
 }
 
+float intersect(const Ray & ray, const Mesh &mesh) {
+    float t = intersect(ray, mesh.bounding);
+    if(t == noIntersect)
+    {
+        return noIntersect;
+    }
+    else {
+        //std::cout << "Touche" << std::endl;
+        t = 0;
+        float tmin = 1E100;
+        for(int i = 0; i < mesh.faces.size(); i += 3) {
+            Triangle tri{mesh.vertices.at(mesh.faces.at(i)),mesh.vertices.at(mesh.faces.at(i+1)),mesh.vertices.at(mesh.faces.at(i+2))};
+            t = intersect(ray, tri);
+            if(t != noIntersect && t < tmin && t > 0)
+                tmin = t;
+        }
+        return tmin;
+    }
+}
+
 glm::vec3 getNormale(const glm::vec3 &point, const Sphere &sphere) {
     return glm::normalize(point-sphere.center);
 }
 
 glm::vec3 getNormale(const glm::vec3 &point, const Triangle &triangle) {
     return glm::normalize(glm::cross(glm::vec3{triangle.v1-triangle.v0},glm::vec3{triangle.v2-triangle.v0}));
+}
+
+glm::vec3 getNormale(const glm::vec3 &point, const Mesh &mesh) {
+    return glm::vec3{1,0,0};
 }
 
 struct Diffuse
@@ -207,7 +296,7 @@ namespace scene
     const Sphere rightSphere{16.5, glm::vec3 {73, 16.5, 78}};
 
     const glm::vec3 light{50, 70, 81.6};
-    const glm::vec3 lightColor(10,10,10);
+    const glm::vec3 lightColor(5,5,5);
 
     // Materials
     const Diffuse white{{.75, .75, .75}};
@@ -216,6 +305,8 @@ namespace scene
 
     const Glass glass{{1, 1, 1}};
     const Mirror mirror{{1, 1, 1}};
+
+    Mesh mesh = readObj(glm::vec3(50,0,50), "C:\\Users\\etu\\Desktop\\bg.obj");
 
     // Objects
     // Note: this is a rather convoluted way of initialising a vector of unique_ptr ;)
@@ -231,6 +322,7 @@ namespace scene
         ret.push_back(makeObject(rightWallB, blue));
         ret.push_back(makeObject(leftWallA, red));
         ret.push_back(makeObject(leftWallB, red));
+        ret.push_back(makeObject(mesh, red));
 
         ret.push_back(makeObject(leftSphere, mirror));
         ret.push_back(makeObject(rightSphere, glass));
@@ -473,7 +565,7 @@ void exoSamplingMonteCarlo() {
 
 int main (int, char **)
 {
-    int w = 768, h = 768;
+    int w = 768, h = 768, iterations = 0;
     std::vector<glm::vec3> colors(w * h, glm::vec3{0.f, 0.f, 0.f});
 
     Ray cam {{50, 52, 295.6}, glm::normalize(glm::vec3{0, -0.042612, -1})};	// cam pos, dir
@@ -488,25 +580,26 @@ int main (int, char **)
         ;
 
     glm::mat4 screenToRay = glm::inverse(camera);
-
+    QTime t;
+    t.start();
     #pragma omp parallel for
     for (int y = 0; y < h; y++)
     {
-        std::cerr << "\rRendering: " << 100 * y / (h - 1) << "%";
+        std::cerr << "\rRendering: " << 100 * iterations / ((w-1)*(h-1)) << "%";
 
         for (unsigned short x = 0; x < w; x++)
         {
             glm::vec3 r;
-            float smoothies = 150.f;
+            float smoothies = 10.f;
             for(int smooths = 0; smooths < smoothies; ++smooths)
             {
                 float u = random_u();
                 float v = random_u();
                 float R = sqrt(-2*log(u));
-                float xDecal = R * cos(2*pi*u)*0.7;
-                float yDecal = R * sin(2*pi*v)*0.7;
-                glm::vec4 p0 = screenToRay * glm::vec4{float(x)+xDecal-0.7, float(h - y )+ yDecal-0.7, 0.f, 1.f};
-                glm::vec4 p1 = screenToRay * glm::vec4{float(x)+xDecal-0.7, float(h - y )+ yDecal-0.7, 1.f, 1.f};
+                float xDecal = R * cos(2*pi*u)*.5;
+                float yDecal = R * sin(2*pi*v)*.5;
+                glm::vec4 p0 = screenToRay * glm::vec4{float(x)+xDecal-.5, float(h - y )+ yDecal-.5, 0.f, 1.f};
+                glm::vec4 p1 = screenToRay * glm::vec4{float(x)+xDecal-.5, float(h - y )+ yDecal-.5, 1.f, 1.f};
 
                 glm::vec3 pp0 = glm::vec3(p0 / p0.w);
                 glm::vec3 pp1 = glm::vec3(p1 / p1.w);
@@ -518,6 +611,7 @@ int main (int, char **)
             }
             r/=smoothies;
             colors[y * w + x] = colors[y * w + x]*0.25f + glm::clamp(r, glm::vec3(0.f, 0.f, 0.f), glm::vec3(1.f, 1.f, 1.f));// * 0.25f;
+            ++iterations;
         }
     }
 
@@ -528,4 +622,6 @@ int main (int, char **)
         for (auto c : colors)
             f << toInt(c.x) << " " << toInt(c.y) << " " << toInt(c.z) << " ";
     }
+
+    std::cout << std::endl << "Rendered in " << t.elapsed()/1000. << "s." << std::endl;
 }
