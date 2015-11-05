@@ -43,12 +43,17 @@ struct Triangle
     const glm::vec3 v0, v1, v2;
 };
 
+struct Boite {
+    const glm::vec3 a, b;
+};
+
 struct Mesh {
     std::vector<glm::vec3> vertices;
     std::vector<glm::vec3> normals;
     std::vector<int> faces;
     std::vector<int> normalIds;
-    Sphere bounding;
+    //Sphere bounding;
+    Boite bounding;
 };
 
 Mesh readObj(const glm::vec3 &center, const char* obj) {
@@ -96,7 +101,8 @@ Mesh readObj(const glm::vec3 &center, const char* obj) {
 
         }
 
-        Sphere bounding{sqrt(squaredDistance(maxVal-minVal))*0.5f ,0.5f*(minVal+maxVal)};
+        Boite bounding{minVal, maxVal};
+        //Sphere bounding{sqrt(squaredDistance(maxVal-minVal))*0.5f ,0.5f*(minVal+maxVal)};
 
         fclose(f);
 
@@ -146,6 +152,36 @@ float intersect(const Ray & ray, const Triangle &triangle)
     return t;
 }
 
+float intersect(const Ray& r, const Boite &b) {
+
+    glm::vec3 dirfrac{1.0f / r.direction.x, 1.0f / r.direction.y, 1.0f / r.direction.z};
+    // lb is the corner of AABB with minimal coordinates - left bottom, rt is maximal corner
+    // r.org is origin of ray
+    float t1 = (b.a.x - r.origin.x)*dirfrac.x;
+    float t2 = (b.b.x - r.origin.x)*dirfrac.x;
+    float t3 = (b.a.y - r.origin.y)*dirfrac.y;
+    float t4 = (b.b.y - r.origin.y)*dirfrac.y;
+    float t5 = (b.a.z - r.origin.z)*dirfrac.z;
+    float t6 = (b.b.z - r.origin.z)*dirfrac.z;
+
+    float tmin = std::max(std::max(std::min(t1, t2), std::min(t3, t4)), std::min(t5, t6));
+    float tmax = std::min(std::min(std::max(t1, t2), std::max(t3, t4)), std::max(t5, t6));
+
+    // if tmax < 0, ray (line) is intersecting AABB, but whole AABB is behing us
+    if (tmax < 0)
+    {
+        return noIntersect;
+    }
+
+    // if tmin > tmax, ray doesn't intersect AABB
+    if (tmin > tmax)
+    {
+        return noIntersect;
+    }
+
+    return tmin;
+}
+
 float intersect(const Ray & ray, const Mesh &mesh) {
     float t = intersect(ray, mesh.bounding);
     if(t == noIntersect)
@@ -175,6 +211,10 @@ glm::vec3 getNormale(const glm::vec3 &point, const Triangle &triangle) {
 }
 
 glm::vec3 getNormale(const glm::vec3 &point, const Mesh &mesh) {
+    return glm::vec3{1,0,0};
+}
+
+glm::vec3 getNormale(const glm::vec3 &point, const Boite &boite) {
     return glm::vec3{1,0,0};
 }
 
@@ -294,6 +334,7 @@ namespace scene
 
     const Sphere leftSphere{16.5, glm::vec3 {27, 16.5, 47}};
     const Sphere rightSphere{16.5, glm::vec3 {73, 16.5, 78}};
+    const Boite box{glm::vec3{30,0,30}, glm::vec3{70,40,70}};
 
     const glm::vec3 light{50, 70, 81.6};
     const glm::vec3 lightColor(5,5,5);
@@ -323,6 +364,7 @@ namespace scene
         ret.push_back(makeObject(leftWallA, red));
         ret.push_back(makeObject(leftWallB, red));
         ret.push_back(makeObject(mesh, red));
+        //ret.push_back(makeObject(box, white));
 
         ret.push_back(makeObject(leftSphere, mirror));
         ret.push_back(makeObject(rightSphere, glass));
@@ -590,14 +632,15 @@ int main (int, char **)
         for (unsigned short x = 0; x < w; x++)
         {
             glm::vec3 r;
-            float smoothies = 10.f;
+            float smoothies = 5.f;
             for(int smooths = 0; smooths < smoothies; ++smooths)
             {
                 float u = random_u();
-                float v = random_u();
+                //float v = random_u();
                 float R = sqrt(-2*log(u));
+                //float R2 = sqrt(-2*log(v));
                 float xDecal = R * cos(2*pi*u)*.5;
-                float yDecal = R * sin(2*pi*v)*.5;
+                float yDecal = R * sin(2*pi*u)*.5;
                 glm::vec4 p0 = screenToRay * glm::vec4{float(x)+xDecal-.5, float(h - y )+ yDecal-.5, 0.f, 1.f};
                 glm::vec4 p1 = screenToRay * glm::vec4{float(x)+xDecal-.5, float(h - y )+ yDecal-.5, 1.f, 1.f};
 
@@ -616,7 +659,7 @@ int main (int, char **)
     }
 
     {
-        std::fstream f("C:\\Users\\etu\\Desktop\\image.ppm", std::fstream::out);
+        std::fstream f("C:\\Users\\etu\\Desktop\\image5.ppm", std::fstream::out);
         f << "P3\n" << w << " " << h << std::endl << "255" << std::endl;
 
         for (auto c : colors)
