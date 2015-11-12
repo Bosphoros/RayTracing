@@ -123,7 +123,7 @@ void divideMeshTree(MeshTree& in){
     }
 
     Boite bLeft{in.bounding.a, newB};
-    Boite bRight{newA, in.bounding.b};
+    //Boite bRight{newA, in.bounding.b};
 
     std::vector<int> triLeft;
     std::vector<int> triRight;
@@ -166,7 +166,10 @@ void divideMeshTree(MeshTree& in){
     MeshTree* right = new MeshTree{bRightProcessed, in.mesh, triRight};
     in.right = right;
 
-    std::cout << "In ";
+
+    std::cout << "Triangles mesh : " << in.triangles.size() << std::endl;
+    std::cout << "Left : " << left->triangles.size() << ", right : " << right->triangles.size() << std::endl;
+    /*std::cout << "In ";
     writeVec3(in.bounding.a);
     std::cout << " / ";
     writeVec3(in.bounding.b);
@@ -182,7 +185,7 @@ void divideMeshTree(MeshTree& in){
     writeVec3(bRightProcessed.a);
     std::cout << " / ";
     writeVec3(bRightProcessed.b);
-    std::cout << std::endl;
+    std::cout << std::endl;//*/
 
     if(triLeft.size() > 200) {
         divideMeshTree(*left);
@@ -198,6 +201,7 @@ MeshTree readObj(const glm::vec3 &center, const char* obj) {
     std::vector<glm::vec3> normals;
     std::vector<int> faces;
     std::vector<int> normalIds;
+    int nbr = 0;
 
         glm::vec3 minVal(1E100, 1E100, 1E100), maxVal(-1E100, -1E100, -1E100);
         FILE* f = fopen(obj, "r");
@@ -234,12 +238,14 @@ MeshTree readObj(const glm::vec3 &center, const char* obj) {
                 normalIds.push_back(k0-1);
                 normalIds.push_back(k1-1);
                 normalIds.push_back(k2-1);
+                ++nbr;
             }
 
         }
 
         Boite bounding{minVal, maxVal};
         std::vector<int> triangles;
+        std::cout << "Faces size " << faces.size() << ", " << faces.size()/3 << "/" << nbr << std::endl;
         triangles.resize(faces.size()/3);
         for(int i = 0; i < triangles.size(); ++i){
             triangles[i] = i;
@@ -336,11 +342,12 @@ float intersect(const Ray & ray, const MeshTree &mesh) {
     else {
         //std::cout << "Touche" << std::endl;
         if(mesh.left != 0) {
-           float tsub = intersect(ray, *(mesh.left));
-           if(tsub == noIntersect){
-               tsub = intersect(ray, *(mesh.right));
-           }
-           return tsub;
+
+            float tsub1 = intersect(ray, *(mesh.left));
+           //if(tsub == noIntersect){
+            float tsub2 = intersect(ray, *(mesh.right));
+           //}
+            return std::min(tsub1, tsub2);
         }
         else {
             t = 0;
