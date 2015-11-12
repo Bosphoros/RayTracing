@@ -47,16 +47,153 @@ struct Boite {
     const glm::vec3 a, b;
 };
 
+struct MeshBounded {
+    std::vector<glm::vec3> vertices;
+    std::vector<glm::vec3> normals;
+    std::vector<int> faces;
+    std::vector<int> normalIds;
+    Boite bounding;
+};
+
 struct Mesh {
     std::vector<glm::vec3> vertices;
     std::vector<glm::vec3> normals;
     std::vector<int> faces;
     std::vector<int> normalIds;
-    //Sphere bounding;
-    Boite bounding;
 };
 
-Mesh readObj(const glm::vec3 &center, const char* obj) {
+struct MeshTree {
+    Boite bounding;
+    Mesh* mesh;
+    std::vector<int> triangles;
+    MeshTree* left;
+    MeshTree* right;
+};
+
+bool pointIsInBox(const glm::vec3& p, const Boite& b) {
+    return (p.x >= b.a.x && p.x <= b.b.x) && (p.y >= b.a.y && p.y <= b.b.y) && (p.z >= b.a.z && p.z <= b.b.z);
+}
+
+glm::vec3 getMinimal(const glm::vec3& a, const glm::vec3& b) {
+    float minX = 1E100, minY = 1E100, minZ = 1E100;
+
+    minX = std::min(a.x, b.x);
+    minY = std::min(a.y, b.y);
+    minZ = std::min(a.z, b.z);
+
+    return glm::vec3{minX, minY, minZ};
+}
+
+glm::vec3 getMaximal(const glm::vec3& a, const glm::vec3& b) {
+    float maxX = -1E100, maxY = -1E100, maxZ = -1E100;
+
+    maxX = std::max(a.x, b.x);
+    maxY = std::max(a.y, b.y);
+    maxZ = std::max(a.z, b.z);
+
+    return glm::vec3{maxX, maxY, maxZ};
+}
+
+void writeVec3(const glm::vec3 & v) {
+    std::cout << v.x << ", " << v.y << ", " << v.z << " ";
+}
+
+void divideMeshTree(MeshTree& in){
+    float distX = in.bounding.b.x - in.bounding.a.x;
+    float distY = in.bounding.b.y - in.bounding.a.y;
+    float distZ = in.bounding.b.z - in.bounding.a.z;
+    bool cutX = distX > distY && distX > distZ;
+    bool cutY = distY > distX && distY > distZ;
+    int idVertex = -1;
+
+    glm::vec3 newA, newB;
+    if(cutX) {
+        newB = glm::vec3{in.bounding.a.x + distX/2, in.bounding.b.y, in.bounding.b.z};
+        newA = glm::vec3{in.bounding.a.x + distX/2, in.bounding.a.y, in.bounding.a.z};
+    }
+    else {
+        if(cutY) {
+            newB = glm::vec3{in.bounding.b.x, in.bounding.a.y + distY/2, in.bounding.b.z};
+            newA = glm::vec3{in.bounding.a.x, in.bounding.a.y + distY/2, in.bounding.a.z};
+        }
+        else {
+            newB = glm::vec3{in.bounding.b.x, in.bounding.b.y, in.bounding.a.z + distZ/2};
+            newA = glm::vec3{in.bounding.a.x, in.bounding.a.y, in.bounding.a.z + distZ/2};
+        }
+    }
+
+    Boite bLeft{in.bounding.a, newB};
+    Boite bRight{newA, in.bounding.b};
+
+    std::vector<int> triLeft;
+    std::vector<int> triRight;
+
+    for(int i = 0; i < in.triangles.size(); ++i) {
+        glm::vec3 test = in.mesh->vertices[in.mesh->faces[in.triangles[i]*3]];
+        if(pointIsInBox(test, bLeft)) {
+            triLeft.push_back(in.triangles[i]);
+        }
+        else {
+            triRight.push_back(in.triangles[i]);
+        }
+    }
+
+    glm::vec3 minLeft{1E100, 1E100, 1E100}, maxLeft{-1E100, -1E100, -1E100};
+    for(int i = 0; i < triLeft.size(); ++i) {
+        glm::vec3 un = in.mesh->vertices[in.mesh->faces[triLeft[i]*3]];
+        glm::vec3 deux = in.mesh->vertices[in.mesh->faces[triLeft[i]*3+1]];
+        glm::vec3 trois = in.mesh->vertices[in.mesh->faces[triLeft[i]*3+2]];
+
+        minLeft = getMinimal(getMinimal(minLeft, un),getMinimal(deux, trois));
+
+        maxLeft = getMaximal(getMaximal(maxLeft, un),getMaximal(deux, trois));
+    }
+    Boite bLeftProcessed{minLeft, maxLeft};
+    MeshTree* left = new MeshTree{bLeftProcessed, in.mesh, triLeft};
+    in.left = left;
+
+    glm::vec3 minRight{1E100, 1E100, 1E100}, maxRight{-1E100, -1E100, -1E100};
+    for(int i = 0; i < triRight.size(); ++i) {
+        glm::vec3 un = in.mesh->vertices[in.mesh->faces[triRight[i]*3]];
+        glm::vec3 deux = in.mesh->vertices[in.mesh->faces[triRight[i]*3+1]];
+        glm::vec3 trois = in.mesh->vertices[in.mesh->faces[triRight[i]*3+2]];
+
+        minRight = getMinimal(getMinimal(minRight, un),getMinimal(deux, trois));
+
+        maxRight = getMaximal(getMaximal(maxRight, un),getMaximal(deux, trois));
+    }
+    Boite bRightProcessed{minRight, maxRight};
+    MeshTree* right = new MeshTree{bRightProcessed, in.mesh, triRight};
+    in.right = right;
+
+    std::cout << "In ";
+    writeVec3(in.bounding.a);
+    std::cout << " / ";
+    writeVec3(in.bounding.b);
+    std::cout << std::endl;
+
+    std::cout << "Left ";
+    writeVec3(bLeftProcessed.a);
+    std::cout << " / ";
+    writeVec3(bLeftProcessed.b);
+    std::cout << std::endl;
+
+    std::cout << "Right ";
+    writeVec3(bRightProcessed.a);
+    std::cout << " / ";
+    writeVec3(bRightProcessed.b);
+    std::cout << std::endl;
+
+    if(triLeft.size() > 200) {
+        divideMeshTree(*left);
+    }
+    if(triRight.size() > 200) {
+        divideMeshTree(*right);
+    }
+
+}
+
+MeshTree readObj(const glm::vec3 &center, const char* obj) {
     std::vector<glm::vec3> vertices;
     std::vector<glm::vec3> normals;
     std::vector<int> faces;
@@ -102,13 +239,21 @@ Mesh readObj(const glm::vec3 &center, const char* obj) {
         }
 
         Boite bounding{minVal, maxVal};
+        std::vector<int> triangles;
+        triangles.resize(faces.size()/3);
+        for(int i = 0; i < triangles.size(); ++i){
+            triangles[i] = i;
+        }
         //Sphere bounding{sqrt(squaredDistance(maxVal-minVal))*0.5f ,0.5f*(minVal+maxVal)};
 
         fclose(f);
 
-        Mesh m{vertices, normals, faces, normalIds, bounding};
-
-        return m;
+        Mesh* m = new Mesh{vertices, normals, faces, normalIds};
+        MeshTree mt{bounding, m, triangles};
+        std::cout << "Begining division" << std::endl;
+        divideMeshTree(mt);
+        std::cout << "Division end" << std::endl;
+        return mt;
 }
 
     // WARRING: works only if r.d is normalized
@@ -182,7 +327,7 @@ float intersect(const Ray& r, const Boite &b) {
     return tmin;
 }
 
-float intersect(const Ray & ray, const Mesh &mesh) {
+float intersect(const Ray & ray, const MeshTree &mesh) {
     float t = intersect(ray, mesh.bounding);
     if(t == noIntersect)
     {
@@ -190,15 +335,26 @@ float intersect(const Ray & ray, const Mesh &mesh) {
     }
     else {
         //std::cout << "Touche" << std::endl;
-        t = 0;
-        float tmin = 1E100;
-        for(int i = 0; i < mesh.faces.size(); i += 3) {
-            Triangle tri{mesh.vertices.at(mesh.faces.at(i)),mesh.vertices.at(mesh.faces.at(i+1)),mesh.vertices.at(mesh.faces.at(i+2))};
-            t = intersect(ray, tri);
-            if(t != noIntersect && t < tmin && t > 0)
-                tmin = t;
+        if(mesh.left != 0) {
+           float tsub = intersect(ray, *(mesh.left));
+           if(tsub == noIntersect){
+               tsub = intersect(ray, *(mesh.right));
+           }
+           return tsub;
         }
-        return tmin;
+        else {
+            t = 0;
+            float tmin = 1E100;
+            for(int i = 0; i < mesh.triangles.size(); ++i) {
+                int idTri = mesh.triangles[i];
+                Triangle tri{mesh.mesh->vertices[mesh.mesh->faces[3*idTri]], mesh.mesh->vertices[mesh.mesh->faces[3*idTri + 1]], mesh.mesh->vertices[mesh.mesh->faces[3*idTri + 2]]};
+                t = intersect(ray, tri);
+                if(t != noIntersect && t < tmin && t > 0)
+                    tmin = t;
+            }
+            return tmin;
+        }
+
     }
 }
 
@@ -210,7 +366,7 @@ glm::vec3 getNormale(const glm::vec3 &point, const Triangle &triangle) {
     return glm::normalize(glm::cross(glm::vec3{triangle.v1-triangle.v0},glm::vec3{triangle.v2-triangle.v0}));
 }
 
-glm::vec3 getNormale(const glm::vec3 &point, const Mesh &mesh) {
+glm::vec3 getNormale(const glm::vec3 &point, const MeshTree &mesh) {
     return glm::vec3{1,0,0};
 }
 
@@ -347,7 +503,8 @@ namespace scene
     const Glass glass{{1, 1, 1}};
     const Mirror mirror{{1, 1, 1}};
 
-    Mesh mesh = readObj(glm::vec3(50,0,50), "C:\\Users\\etu\\Desktop\\bg.obj");
+    MeshTree mesh = readObj(glm::vec3(50,0,50), "C:\\Users\\etu\\Desktop\\bg.obj");
+
 
     // Objects
     // Note: this is a rather convoluted way of initialising a vector of unique_ptr ;)
@@ -659,7 +816,7 @@ int main (int, char **)
     }
 
     {
-        std::fstream f("C:\\Users\\etu\\Desktop\\image5.ppm", std::fstream::out);
+        std::fstream f("C:\\Users\\etu\\Desktop\\image6.ppm", std::fstream::out);
         f << "P3\n" << w << " " << h << std::endl << "255" << std::endl;
 
         for (auto c : colors)
